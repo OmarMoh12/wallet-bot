@@ -27,3 +27,6 @@ Thumbs.db
 *.key
 secrets/
 .signer/
+.env
+.env.local
+.env.*.local
