@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A financial codebase should not deploy on a red build; every gate here is blocking.
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wallet_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      TEST_DATABASE_URL: postgresql://app_user:app_user_pw@127.0.0.1:5432/wallet_test
+      TEST_DATABASE_MIGRATION_URL: postgresql://postgres:postgres@127.0.0.1:5432/wallet_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Create the least-privilege application role
+        # Integration tests must connect as a NON-superuser, or RLS is silently bypassed and
+        # the security tests would pass without proving anything.
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d wallet_test -c \
+            "CREATE ROLE app_user LOGIN PASSWORD 'app_user_pw';"
+
+      - run: pnpm run format:check
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test
+      - run: pnpm run build
+
+      - name: Scan the client bundle for leaked secrets
+        run: node scripts/check-env-leaks.mjs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

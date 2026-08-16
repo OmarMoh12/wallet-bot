@@ -1,0 +1,22 @@
+# =============================================================================
+#  Railway defaults.
+#
+#  Railway hosts three services from this repository, each built from the same Dockerfile
+#  and distinguished by its start command. Per-service configuration lives in
+#  apps/<service>/railway.json; this file holds what they share.
+#
+#  Set the service root directory to the repository root for all three, so the Docker build
+#  context includes the workspace packages.
+# =============================================================================
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# Applied on every deploy, before the new version takes traffic. Migrations are idempotent
+# and guarded by an advisory lock, so concurrent deploys serialise rather than collide.
+startCommand = "node packages/db/dist/cli/migrate.js up && node apps/worker/dist/index.js"

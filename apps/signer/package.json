@@ -1,0 +1,26 @@
+{
+  "name": "@wallet/signer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "keystore": "node dist/cli/keystore.js",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@noble/curves": "1.8.1",
+    "@wallet/shared": "workspace:*",
+    "zod": "3.24.1",
+    "@wallet/blockchain": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.7",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}

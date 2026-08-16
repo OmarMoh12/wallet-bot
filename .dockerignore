@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+**/dist
+**/.next
+coverage
+.git
+.github
+*.log
+.env
+.env.*
+!.env.example
+.signer
+secrets
+*.pem
+*.key
+docs
+tests

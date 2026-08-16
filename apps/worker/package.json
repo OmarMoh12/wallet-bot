@@ -1,0 +1,25 @@
+{
+  "name": "@wallet/worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@wallet/blockchain": "workspace:*",
+    "@wallet/core": "workspace:*",
+    "@wallet/db": "workspace:*",
+    "@wallet/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.7",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}

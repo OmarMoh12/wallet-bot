@@ -1,0 +1,46 @@
+{
+  "name": "my-wallet-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build:packages": "pnpm --filter \"./packages/**\" --workspace-concurrency=1 run build",
+    "build": "pnpm run build:packages && pnpm --filter \"./apps/**\" --workspace-concurrency=1 run build",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "pnpm --filter @wallet/web dev",
+    "dev:bot": "pnpm --filter @wallet/bot dev",
+    "dev:worker": "pnpm --filter @wallet/worker dev",
+    "typecheck": "pnpm run build:packages && pnpm -r --workspace-concurrency=1 run typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,mjs,json,md,css,sql,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,mjs,json,md,css,sql,yml,yaml}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "db:migrate": "node --env-file-if-exists=.env packages/db/dist/cli/migrate.js up",
+    "db:status": "node --env-file-if-exists=.env packages/db/dist/cli/migrate.js status",
+    "db:reset": "node --env-file-if-exists=.env packages/db/dist/cli/migrate.js reset",
+    "db:seed": "node --env-file-if-exists=.env packages/db/dist/cli/seed.js",
+    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
+    "clean": "node scripts/clean.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.19.0",
+    "@noble/curves": "1.8.1",
+    "@noble/hashes": "1.7.1",
+    "@types/node": "22.10.7",
+    "@vitest/coverage-v8": "3.0.5",
+    "eslint": "9.19.0",
+    "eslint-config-prettier": "10.0.1",
+    "prettier": "3.4.2",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "typescript-eslint": "8.22.0",
+    "vitest": "3.0.5"
+  }
+}

@@ -1,0 +1,112 @@
+# =============================================================================
+#  Local development stack.
+#
+#  Brings up PostgreSQL with the migrations applied, plus the worker, the bot and the
+#  signer. The Mini App runs outside compose (`pnpm dev:web`) so Next.js keeps its fast
+#  refresh.
+#
+#    docker compose up -d db
+#    pnpm db:migrate && pnpm db:seed -- --telegram-id <your id>
+#    pnpm dev
+#
+#  The signer is included but starts DISABLED, and is bound to the internal network only —
+#  it deliberately has no published port.
+# =============================================================================
+
+name: wallet
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: wallet
+      # Deterministic collation, so ordering matches production regardless of host locale.
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=en-US'
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # Block sequence with a double-quoted scalar: the JS needs single quotes inside,
+      # and nesting those in a single-quoted YAML string is not valid YAML.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['node', 'apps/worker/dist/index.js']
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/wallet
+      DATABASE_SSL: 'false'
+      WORKER_HEALTH_PORT: '8080'
+    ports:
+      - '127.0.0.1:8080:8080'
+    healthcheck:
+      # Block sequence with a double-quoted scalar: the JS needs single quotes inside,
+      # and nesting those in a single-quoted YAML string is not valid YAML.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['node', 'apps/bot/dist/index.js']
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/wallet
+      DATABASE_SSL: 'false'
+      TELEGRAM_MODE: polling
+      WORKER_HEALTH_PORT: '8081'
+    ports:
+      - '127.0.0.1:8081:8081'
+
+  signer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['node', 'apps/signer/dist/index.js']
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      # Disabled by default. Enabling it needs SIGNER_ENABLED, a master key and an HMAC
+      # secret — see docs/security.md before doing that.
+      SIGNER_ENABLED: 'false'
+      SIGNER_BIND: '0.0.0.0'
+      SIGNER_ALLOW_PUBLIC_BIND: 'true'
+      SIGNER_PORT: '8090'
+    # No `ports:` entry on purpose. The signer is reachable only from the compose network.
+    expose:
+      - '8090'
+    volumes:
+      - signer-keys:/app/.signer
+
+volumes:
+  db-data:
+  signer-keys:
