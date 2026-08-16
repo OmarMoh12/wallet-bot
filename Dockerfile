@@ -55,12 +55,20 @@ COPY packages ./packages
 COPY apps/bot ./apps/bot
 COPY apps/worker ./apps/worker
 COPY apps/signer ./apps/signer
+# Migrations must be present in THIS stage so the runtime stage below can copy them from
+# it. They are not compiled — they are plain SQL — but `packages/db`'s migration runner
+# reads them from supabase/migrations/ at boot, so the worker's start command
+# (`node packages/db/dist/cli/migrate.js up && ...`) fails without this.
+COPY supabase ./supabase
 RUN pnpm run build:packages \
  && pnpm --filter @wallet/bot build \
  && pnpm --filter @wallet/worker build \
  && pnpm --filter @wallet/signer build
 # Drop devDependencies now that compilation is done.
-RUN pnpm prune --prod
+# CI=true skips the interactive "reinstall from scratch?" prompt pnpm shows here; without
+# a TTY it silently falls through to a default, which happens to be correct, but relying
+# on that default rather than being explicit is worth not doing.
+RUN CI=true pnpm prune --prod
 
 # -------------------------------------------------------------------- runtime
 FROM node:22.14.0-bookworm-slim AS runtime
