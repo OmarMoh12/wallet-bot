@@ -96,6 +96,25 @@ describe('per-service Railway configuration', () => {
   });
 });
 
+describe('Dockerfile default command', () => {
+  it('does not silently default to any service binary', () => {
+    // One image, three services: a default command can only be right for one of them. While
+    // it was `node apps/worker/dist/index.js`, a service with no start command configured
+    // started a second worker under another service's name instead of failing.
+    const cmd = read('Dockerfile')
+      .split('\n')
+      .filter((line) => line.startsWith('CMD'))
+      .join('\n');
+
+    expect(cmd, 'Dockerfile must declare a CMD').not.toBe('');
+    expect(cmd).not.toContain('apps/worker/dist/index.js');
+    expect(cmd).not.toContain('apps/bot/dist/index.js');
+    expect(cmd).not.toContain('apps/signer/dist/index.js');
+    // It must fail rather than run something arbitrary.
+    expect(cmd).toContain('exit 1');
+  });
+});
+
 describe('dead configuration files', () => {
   it('keeps no railway.json under apps/', () => {
     // Railway only reads a service's own config path. Files under apps/ were never read at

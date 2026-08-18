@@ -97,5 +97,14 @@ COPY --from=build --chown=node:node /app/package.json ./package.json
 # Migrations travel with the image so `db:migrate` can run as a release step.
 COPY --from=build --chown=node:node /app/supabase ./supabase
 EXPOSE 8080
-# Overridden per service by the Railway start command.
-CMD ["node", "apps/worker/dist/index.js"]
+# There is deliberately no usable default command.
+#
+# One image serves three services, so a default can only ever be right for one of them. When
+# it was `node apps/worker/dist/index.js`, a service with no start command configured did not
+# fail — it silently started a second worker under another service's name, which is the
+# hardest kind of misconfiguration to notice. Failing loudly here costs one crashed deploy and
+# names the fix.
+#
+# Every service sets its command via railway.<service>.json (see docs/deployment.md §3), so
+# this runs only when that wiring is missing.
+CMD ["sh", "-c", "echo 'No start command configured for this service. Point its Railway \"Config as code\" path at railway.<service>.json (bot | worker | signer) — see docs/deployment.md section 3.' >&2; exit 1"]
