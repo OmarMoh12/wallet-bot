@@ -65,10 +65,23 @@ RUN pnpm run build:packages \
  && pnpm --filter @wallet/worker build \
  && pnpm --filter @wallet/signer build
 # Drop devDependencies now that compilation is done.
-# CI=true skips the interactive "reinstall from scratch?" prompt pnpm shows here; without
-# a TTY it silently falls through to a default, which happens to be correct, but relying
-# on that default rather than being explicit is worth not doing.
-RUN CI=true pnpm prune --prod
+#
+# NOT `pnpm prune --prod`: run at the workspace root it resolves reachability from the *root*
+# project, whose `dependencies` block is empty, so it strips the runtime dependencies the
+# workspace packages own (postgres via @wallet/db, grammy in the bot) while leaving the
+# compiled dist/ in place. That is exactly the observed failure -- application code fully
+# present, first import resolving to nothing:
+#
+#   Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'postgres'
+#     imported from /app/packages/db/dist/client.js
+#
+# Re-resolving the same frozen lockfile with --prod against the three deployable filters
+# drops devDependencies while keeping each service's runtime graph intact. It is also
+# non-interactive by nature, so it needs no CI=true guard.
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts \
+      --filter "@wallet/bot..." \
+      --filter "@wallet/worker..." \
+      --filter "@wallet/signer..."
 
 # -------------------------------------------------------------------- runtime
 FROM node:22.14.0-bookworm-slim AS runtime
