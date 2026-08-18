@@ -54,6 +54,18 @@ const healthServer = createServer((req: IncomingMessage, res: ServerResponse) =>
   send(404, { error: { code: 'NOT_FOUND' } });
 });
 
+// Without this, a failed bind reaches `uncaughtException` as a bare errno and the reason
+// the worker never came up is a guess. It is a startup failure, so it exits non-zero.
+healthServer.on('error', (error: NodeJS.ErrnoException) => {
+  context.logger.fatal('worker health endpoint could not bind', {
+    operation: 'worker.boot',
+    port: context.config.worker.healthPort,
+    code: error.code ?? 'unknown',
+    error: error.message,
+  });
+  void shutdown('healthServerError', 1);
+});
+
 healthServer.listen(context.config.worker.healthPort, '0.0.0.0', () => {
   context.logger.info('worker health endpoint listening', {
     operation: 'worker.boot',
@@ -72,11 +84,15 @@ let shuttingDown = false;
  * grace period expires simply loses its lease and is reclaimed by another worker — which is
  * safe precisely because every handler is idempotent.
  */
-async function shutdown(signal: string): Promise<void> {
+async function shutdown(signal: string, exitCode = 0): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
 
-  context.logger.info('worker shutting down', { operation: 'worker.shutdown', signal });
+  context.logger.info('worker shutting down', {
+    operation: 'worker.shutdown',
+    signal,
+    exitCode,
+  });
   runner.stop();
   healthServer.close();
 
@@ -86,7 +102,7 @@ async function shutdown(signal: string): Promise<void> {
   }
 
   await closeAppContext(context).catch(() => {});
-  process.exit(0);
+  process.exit(exitCode);
 }
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
@@ -103,8 +119,12 @@ process.on('uncaughtException', (error) => {
   context.logger.fatal('uncaught exception in worker', {
     operation: 'worker.error',
     error: error.message,
+    stack: error.stack,
   });
-  void shutdown('uncaughtException');
+  // Exit 1, not 0. Railway's restart policy is ON_FAILURE: exiting 0 after a crash tells the
+  // platform the run finished successfully, so the worker is never restarted and the
+  // deployment shows as Completed while no work is being done.
+  void shutdown('uncaughtException', 1);
 });
 
 runner.start().catch((error: unknown) => {

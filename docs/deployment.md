@@ -112,15 +112,55 @@ directory set to the repository root (the Docker build context needs the workspa
 
 Each uses the same `Dockerfile` and differs only in its start command:
 
-| Service | Start command                                                               | Health               |
-| ------- | --------------------------------------------------------------------------- | -------------------- |
-| worker  | `node packages/db/dist/cli/migrate.js up && node apps/worker/dist/index.js` | `/health` on `$PORT` |
-| bot     | `node apps/bot/dist/index.js`                                               | `/health` on `$PORT` |
-| signer  | `node apps/signer/dist/index.js`                                            | none (private)       |
+| Service | Config file           | Start command                                                               | Health               |
+| ------- | --------------------- | --------------------------------------------------------------------------- | -------------------- |
+| worker  | `railway.worker.json` | `node packages/db/dist/cli/migrate.js up && node apps/worker/dist/index.js` | `/health` on `$PORT` |
+| bot     | `railway.bot.json`    | `node apps/bot/dist/index.js`                                               | `/health` on `$PORT` |
+| signer  | `railway.signer.json` | `node apps/signer/dist/index.js`                                            | none (private)       |
+
+Set each service's **Settings → Config as code** path to its file in the table. Shared
+settings (builder, restart policy) live in the root `railway.toml`.
 
 Running migrations from the **worker** start command means they apply once per deploy, before
 the worker takes work. They are idempotent and guarded by an advisory lock, so a concurrent
-deploy serialises rather than collides.
+deploy serialises rather than collides. Only the worker is given `DATABASE_MIGRATION_URL`, so
+only the worker can run them — any other service running the migration CLI now stops with a
+message naming the missing variable.
+
+### Verify the effective start command after every deploy
+
+**A Railway service can run a different process from the one it is named after, and still
+build, deploy and report success.** Verify it; do not assume it:
+
+```bash
+node scripts/check-railway-start-commands.mjs
+```
+
+This compares what Railway is _actually_ running against the `railway.<service>.json` files
+in this repository, and exits non-zero on a mismatch — or on a service it could not check at
+all. Add `--allow-missing` when a service is deliberately not deployed (usually the signer).
+
+Why this needs checking rather than trusting the config:
+
+- Railway resolves **one** config file per service. With every service's root directory set
+  to the repository root, all three resolve the _same_ file unless you set a per-service
+  config path.
+- **Config-as-code silently overrides the dashboard start command.** Nothing in the deploy UI
+  indicates the override happened.
+
+This is not hypothetical. A `startCommand` in the root `railway.toml` was applied to all
+three services, so the **bot** service ran the _worker's_ command: the migration CLI followed
+by the worker binary. The migration CLI had no `DATABASE_MIGRATION_URL` on that service, fell
+back to the runtime role, and died on its first DDL statement. The only symptom was a boot
+crash loop repeating one line —
+
+```
+permission denied for schema public
+```
+
+— while the bot's own code never executed at all. `railway status` showed the real command
+all along. The repository-side shape of that mistake is now pinned by
+`tests/unit/deploy-config.test.ts`, but only a live check can catch the resolution layer.
 
 ### Worker variables
 
@@ -131,6 +171,15 @@ WORKER_CONCURRENCY=4
 CHAIN_SCAN_INTERVAL_SECONDS=60
 WORKER_HEALTH_PORT=8080
 ```
+
+Plus `DATABASE_MIGRATION_URL` — the privileged, **direct** (port 5432) connection. The worker
+is the only service that gets it, and the only one that needs it.
+
+Restart semantics worth knowing: the restart policy is `ON_FAILURE`, so a worker that exits
+**0** is never restarted and its deployment is reported as `Completed`. The worker therefore
+exits non-zero on any uncaught exception or failed health-port bind, and exits 0 only for a
+real SIGTERM/SIGINT shutdown. If you see a worker deployment sitting at `Completed`, that is
+a clean stop — a crash would have restarted and eventually shown as `Crashed`.
 
 ### Bot variables
 

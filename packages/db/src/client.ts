@@ -60,6 +60,63 @@ export function createDatabase(config: DatabaseConfig): Sql {
   }) as Sql;
 }
 
+/**
+ * A connection string with its credentials removed, safe to put in a log line.
+ *
+ * Returns `postgresql://role:***@host:port/database`. The password is replaced rather than
+ * shortened, and the query string is dropped entirely — connection URLs can carry secrets
+ * there too (`?password=`, `?sslcert=`), and no diagnostic needs them.
+ *
+ * A malformed URL yields a fixed placeholder. It deliberately never echoes the input, since
+ * the thing that failed to parse may itself be the secret.
+ */
+export function describeConnection(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const decode = (value: string): string => {
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return value;
+      }
+    };
+    const role = parsed.username ? decode(parsed.username) : '(no role)';
+    const identity = parsed.password ? `${role}:***` : role;
+    const port = parsed.port || '5432';
+    const database = parsed.pathname.replace(/^\//, '') || '(default database)';
+    return `${parsed.protocol}//${identity}@${parsed.hostname}:${port}/${database}`;
+  } catch {
+    return '(unparseable connection string)';
+  }
+}
+
+/** Raised when the migration connection string is missing. Carries no secret. */
+export class MissingMigrationUrlError extends Error {
+  constructor() {
+    super(
+      'DATABASE_MIGRATION_URL is not set. Migrations require the privileged database role ' +
+        '(the one that owns the schema). This does NOT fall back to DATABASE_URL: that is ' +
+        'the least-privilege runtime role and has no DDL rights, so the fallback could only ' +
+        'fail as "permission denied for schema public", attributed to whichever service ' +
+        'happened to run it.',
+    );
+    this.name = 'MissingMigrationUrlError';
+  }
+}
+
+/**
+ * Resolve the connection string migrations must use.
+ *
+ * Deliberately total and fallback-free: the runtime role can never be a valid answer here,
+ * so treating its presence as a substitute converts a missing-variable error into a
+ * privilege error at the first DDL statement — which is a far harder thing to read.
+ */
+export function migrationUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string {
+  const url = env.DATABASE_MIGRATION_URL;
+  if (!url) throw new MissingMigrationUrlError();
+  return url;
+}
+
 export interface ActingUser {
   userId: string;
   isAdmin: boolean;

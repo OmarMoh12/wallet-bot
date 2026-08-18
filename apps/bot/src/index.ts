@@ -125,6 +125,18 @@ async function main(): Promise<void> {
     });
   });
 
+  // A failed bind is a startup failure, and it must say so by name: an unexplained boot
+  // crash loop on this service has cost enough time already.
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    context.logger.fatal('bot http server could not bind', {
+      operation: 'bot.boot',
+      port,
+      code: error.code ?? 'unknown',
+      error: error.message,
+    });
+    process.exit(1);
+  });
+
   server.listen(port, '0.0.0.0', () => {
     context.logger.info('bot http server listening', { operation: 'bot.boot', port });
   });

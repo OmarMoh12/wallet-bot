@@ -1,12 +1,32 @@
 # =============================================================================
-#  Railway defaults.
+#  Railway shared defaults.
 #
-#  Railway hosts three services from this repository, each built from the same Dockerfile
-#  and distinguished by its start command. Per-service configuration lives in
-#  apps/<service>/railway.json; this file holds what they share.
+#  Railway hosts three services from this repository (bot, worker, signer), all built from
+#  the same Dockerfile and distinguished ONLY by their start command. This file holds what
+#  they genuinely share: the builder and the restart policy.
 #
 #  Set the service root directory to the repository root for all three, so the Docker build
 #  context includes the workspace packages.
+#
+#  ---------------------------------------------------------------------------
+#  DO NOT PUT `startCommand` IN THIS FILE.
+#  ---------------------------------------------------------------------------
+#  Railway resolves one config file per service. With the root directory set to the
+#  repository root, every service resolves THIS file — and a `startCommand` here is applied
+#  to all three, silently overriding the per-service start command set in the dashboard.
+#  Config-as-code wins over dashboard settings, and the override is not surfaced anywhere in
+#  the deploy UI.
+#
+#  That is not hypothetical: a `startCommand` here pinned the *worker's* command onto the
+#  bot service, so the bot container ran the migration CLI (with no DATABASE_MIGRATION_URL,
+#  falling back to the unprivileged runtime role) and then the worker binary. The bot itself
+#  never executed. It presented as an unexplained boot crash loop:
+#
+#      permission denied for schema public
+#
+#  Per-service commands live in railway.<service>.json at the repository root. Point each
+#  service's "Config as code" path at its own file (see docs/deployment.md §3), and verify
+#  the effective command after every deploy with `scripts/check-railway-start-commands.mjs`.
 # =============================================================================
 
 [build]
@@ -16,7 +36,3 @@ dockerfilePath = "Dockerfile"
 [deploy]
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
-
-# Applied on every deploy, before the new version takes traffic. Migrations are idempotent
-# and guarded by an advisory lock, so concurrent deploys serialise rather than collide.
-startCommand = "node packages/db/dist/cli/migrate.js up && node apps/worker/dist/index.js"
